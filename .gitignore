@@ -1,0 +1,42 @@
+# Python 缓存和编译文件
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 虚拟环境和 Conda 环境
+.venv/
+venv/
+env/
+ENV/
+.conda/
+
+# 测试、类型检查和覆盖率缓存
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 编辑器和操作系统文件
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# JAX/XLA、CUDA 和程序崩溃产生的缓存或转储文件
+.jax_cache/
+.cache/
+core
+core.*
+*.core
+
+# 参数辨识生成的结果和图片
+results/
+*.npz
+*.npy
+*.pkl
+
+# 临时日志和导出文件
+*.log
+*.tmp
+*.bak

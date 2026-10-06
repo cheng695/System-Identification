@@ -1,0 +1,68 @@
+<mujoco model="总装.SLDASM">
+  <default>
+    <default class="robot">
+      <default class="visual">
+        <geom contype="0" conaffinity="0" group="2" />
+      </default>
+      <default class="collision">
+        <geom contype="0" conaffinity="1" group="3" />
+      </default>
+    </default>
+    <default class="floor">
+      <geom type="plane" size="0 0 0.05" material="groundplane" />
+    </default>
+  </default>
+
+  <compiler angle="radian" meshdir="." balanceinertia="true" />
+
+  <visual>
+    <global offwidth="3840" offheight="2160" />
+  </visual>
+
+  <worldbody>
+    <body name="base_link" childclass="robot" pos="0 0 0.02">
+      <geom name="base_link_collision" type="box" size="0.12 0.12 0.02" class="collision" />
+      <geom name="base_link_visual" type="box" size="0.12 0.12 0.02" material="default_material" class="visual" />
+      <body name="yaw">
+        <inertial pos="0.028481179151121 0.0207660391985798 0.0550691398598107" mass="0.215" diaginertia="0.000106236048473474 8.25219913730509e-05 0.000106966989683334" />
+        <joint name="joint1" type="hinge" axis="0 0 -1" />
+        <geom name="yaw_collision" pos="0.018838 0.019889 0.058853" type="box" size="0.0509 0.03575 0.0335" class="collision" />
+        <geom name="yaw_visual" type="mesh" mesh="yaw_yaw" material="default_material" class="visual" />
+        <body name="pitch1" pos="0.020429 0.022615 0.063853" quat="0.5005 0.5005 -0.4995 -0.4995">
+          <inertial pos="-0.136281136523985 0.18235218189289 -0.0371480248295655" mass="0.644" diaginertia="0.536756801479771 0.53644819353514 0.53699266483332" />
+          <joint name="joint2" type="hinge" limited="true" range="-0.95 0" axis="0 0 -1" />
+          <geom name="pitch1_collision" pos="-0.065513 0.087124 0.014550" euler="0 0 0.60" type="box" size="0.03545 0.07095 0.0705" class="collision" />
+          <geom name="pitch1_visual" type="mesh" mesh="pitch1_pitch1" material="default_material" class="visual" />
+          <body name="pitch2" pos="-0.042841 0.12853 0.05105" quat="0 1 0 0">
+            <inertial pos="0.109012511268356 7.42130474349345E-05 0.0232025680343156" mass="0.441" diaginertia="0.000128577438797984 0.000552834394503445 0.000467915895576166" />
+            <joint name="joint3" type="hinge" limited="true" range="-0.68 0.785" axis="0 0 -1" />
+            <geom name="pitch2_collision" pos="0.113587 0.006775 0.025595" type="box" size="0.1306 0.035 0.0376" class="collision" />
+            <geom name="pitch2_visual" type="mesh" mesh="pitch2_pitch2" material="default_material" class="visual" />
+          </body>
+        </body>
+      </body>
+    </body>
+    <light pos="0 0 2." dir="0 0 -1" directional="true" />
+    <geom name="floor" class="floor" size="0 0 0.05" />
+  </worldbody>
+
+  <asset>
+    <material name="default_material" rgba="0.7 0.7 0.7 1" />
+    <mesh name="yaw_yaw" file="../meshes/yaw.STL" />
+    <mesh name="pitch1_pitch1" file="../meshes/pitch1.STL" />
+    <mesh name="pitch2_pitch2" file="../meshes/pitch2.STL" />
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8" width="300" height="300" />
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2" />
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072" />
+  </asset>
+
+  <actuator>
+    <motor name="joint1" joint="joint1" />
+    <motor name="joint2" joint="joint2" />
+    <motor name="joint3" joint="joint3" />
+  </actuator>
+
+  <visual>
+    <rgba haze="0.15 0.25 0.35 1" />
+  </visual>
+</mujoco>
