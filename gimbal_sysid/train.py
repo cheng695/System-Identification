@@ -140,8 +140,11 @@ def make_physical_parameters(
     return values
 
 
-def make_training_windows(real_data: TrajectoryData) -> list[TrajectoryData]:
-    """按照训练设置切分数据，并在整段数据中均匀选择窗口。"""
+def make_training_windows(
+    real_data: TrajectoryData,
+    limit_count: bool = True,
+) -> list[TrajectoryData]:
+    """按照训练设置切分数据，可选择是否限制窗口数量。"""
     window_size = max(2, int(config.TRAINING_WINDOW_STEPS))
     windows = []
     for start in range(0, real_data.num_steps - 1, window_size):
@@ -162,7 +165,7 @@ def make_training_windows(real_data: TrajectoryData) -> list[TrajectoryData]:
 
     if not windows:
         raise ValueError("训练数据至少需要两个采样点")
-    if len(windows) > config.TRAINING_WINDOW_COUNT:
+    if limit_count and len(windows) > config.TRAINING_WINDOW_COUNT:
         selected_indices = np.linspace(
             0,
             len(windows) - 1,
@@ -262,7 +265,8 @@ def main() -> None:
     model, mjx_model = load_model(model_path, dt=dt)
     print(
         f"训练窗口 = {config.TRAINING_WINDOW_STEPS} 个采样点，"
-        f"共使用 {real_data.num_steps} 个采样点"
+        f"训练使用最多 {config.TRAINING_WINDOW_COUNT} 个窗口，"
+        f"原始数据共 {real_data.num_steps} 个采样点"
     )
 
     num_active = len(real_data.active_joint_ids)
@@ -375,7 +379,9 @@ def main() -> None:
     windowed_trajectories = []
     windowed_pos_real = []
     windowed_vel_real = []
-    for window in make_training_windows(real_data):
+    # 评估阶段不限制窗口数量，覆盖完整 CSV 数据。
+    evaluation_windows = make_training_windows(real_data, limit_count=False)
+    for window in evaluation_windows:
         _, window_trajectory = rollout_from_trajectory(
             model,
             current_model,
@@ -432,7 +438,7 @@ def main() -> None:
         estimated_inertia=np.asarray(final_parameters["inertia"]),
         estimated_viscous=np.asarray(final_parameters["viscous"]),
         estimated_coulomb=np.asarray(final_parameters["coulomb"]),
-        evaluation_mode="windowed_multi_shooting",
+        evaluation_mode="all_windows_multi_shooting",
         training_window_steps=config.TRAINING_WINDOW_STEPS,
         training_window_count=config.TRAINING_WINDOW_COUNT,
     )
