@@ -42,6 +42,10 @@ def load_model(xml_path: str | Path, dt: float | None = None):
             raise ValueError("采样周期 dt 必须是有限的正数，单位为秒")
         model.opt.timestep = dt
 
+    if config.DISABLE_CONTACTS_DURING_TRAINING:
+        model.geom_contype[:] = 0
+        model.geom_conaffinity[:] = 0
+
     # 设置约束求解器的最大迭代次数。
     model.opt.iterations = config.SOLVER_ITERATIONS
     # 设置 Newton/CG 求解器的线搜索最大迭代次数。

@@ -4,21 +4,28 @@ from pathlib import Path
 
 # 训练设置
 # 最多执行的参数更新次数；达到次数不代表已经收敛。
-NUM_EPOCHS = 1000
+NUM_EPOCHS = 5000
 # 每个训练窗口包含的采样点数量。
 # 长序列一次性反向传播容易造成梯度数值不稳定；训练时会把整段 CSV
 # 切成多个窗口，并从每个窗口的真实初始状态重新开始仿真。
-TRAINING_WINDOW_STEPS = 50
-# 每次参数更新最多使用多少个窗口；窗口在整段 CSV 中均匀选取。
-# 限制窗口数量可以避免 JAX 编译一个过大的计算图。
+TRAINING_WINDOW_STEPS = 20
+# 每次参数更新累积多少个窗口的梯度；每遍打乱顺序并遍历全部训练窗口。
+# 单窗口编译复用，增加批量不会展开多份动力学计算图。
 TRAINING_WINDOW_COUNT = 10
+VALIDATION_FRACTION = 0.2
+VALIDATION_EVERY = 50
+TRAINING_RANDOM_SEED = 42
+# 训练后的分窗评估仍覆盖完整 CSV；每隔多少个窗口报告进度。
+EVALUATION_LOG_EVERY = 50
+# 连续自由仿真耗时较长，默认关闭；分窗结果保存后才执行此可选步骤。
+SAVE_FREE_ROLLOUT = True
 # Adam 优化器的学习率，控制优化变量的更新幅度。
 # 当前优化变量是参数的对数，因此不是每次直接给物理参数加 0.01。
-LEARNING_RATE = 0.01
+LEARNING_RATE = 5e-5
 # 每隔多少次更新打印一次损失和参数；初始状态也会打印。
 LOG_EVERY = 10
 # 全部参数梯度的整体范数上限；超过时按比例缩小梯度，再交给 Adam。
-GRADIENT_CLIP_NORM = 1.0
+GRADIENT_CLIP_NORM = 0.02
 
 # 摩擦初值也用于未参与辨识的关节；保持原有取值。
 # 粘性摩擦系数 B 的初始值，单位 N·m·s/rad；粘性摩擦力矩为 B × 角速度。
@@ -32,12 +39,14 @@ FRICTION_LOWER_BOUND = 1.0e-6
 FRICTION_UPPER_BOUND = 0.2
 # 平滑库伦摩擦 Fc*tanh(k*角速度) 中的 k，单位 s/rad。
 # k 越大，零速附近过渡越陡；它是固定设置，不参与参数辨识。
-FRICTION_K = 100.0
-# 当前仅优化所选刚体的第三主惯量，单位 kg·m²。
-# 惯量优化值的下限；不是整个关节等效惯量的下限。
-INERTIA_LOWER_BOUND = 1.0e-6
-# 惯量优化值的上限；该范围本身不保证三个主惯量满足物理约束。
-INERTIA_UPPER_BOUND = 10.0
+FRICTION_K = 20.0
+# 小 yaw 参数辨识不依赖地板、轮子和底盘接触；训练阶段关闭接触以稳定梯度。
+# viewer 仍然使用 robot.xml 中的地板和碰撞体。
+DISABLE_CONTACTS_DURING_TRAINING = True
+# 惯量模式下优化固定锁定姿态的关节等效惯量，单位 kg·m²。
+# 范围用于限制数值搜索，不是对完整惯性张量的物理约束。
+INERTIA_LOWER_BOUND = 1.0e-4
+INERTIA_UPPER_BOUND = 5.0e-2
 
 # 损失权重（角度、速度均方误差）
 # 角度均方误差的乘数，越大越重视角度拟合；当前误差单位为 rad²。
@@ -45,6 +54,10 @@ POSITION_LOSS_WEIGHT = 1.0
 # 速度均方误差的乘数，越大越重视速度拟合；当前误差单位为 (rad/s)²。
 # 总损失 = 角度权重 × 角度均方误差 + 速度权重 × 速度均方误差。
 VELOCITY_LOSS_WEIGHT = 1.0
+# 暂时恢复经过验证的原始单位 MSE 基线；归一化会改变速度与角度的权衡。
+# 训练目标为：角度 MSE + 速度 MSE，最终仍用物理单位 RMSE 评估。
+NORMALIZE_LOSS_BY_DATA_STD = False
+LOSS_SCALE_EPSILON = 1.0e-6
 
 # MJX 求解器：保留现有原型设置。
 # 每个仿真步中约束求解器的最大迭代次数，影响接触、关节限位等约束求解。

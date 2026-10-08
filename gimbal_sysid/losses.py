@@ -46,6 +46,8 @@ def compute_loss(
     real_data: TrajectoryData,
     position_weight: float = config.POSITION_LOSS_WEIGHT,
     velocity_weight: float = config.VELOCITY_LOSS_WEIGHT,
+    position_scale=None,
+    velocity_scale=None,
 ):
     """只对有真实测量数据的关节计算角度和速度损失。
 
@@ -94,8 +96,14 @@ def compute_loss(
             f"真实数据为 {vel_real.shape}"
         )
 
-    position_loss = _mse(pos_sim_measured - pos_real)
-    velocity_loss = _mse(vel_sim_measured - vel_real)
+    position_error = pos_sim_measured - pos_real
+    velocity_error = vel_sim_measured - vel_real
+    if position_scale is not None:
+        position_error = position_error / jnp.asarray(position_scale)
+    if velocity_scale is not None:
+        velocity_error = velocity_error / jnp.asarray(velocity_scale)
+    position_loss = _mse(position_error)
+    velocity_loss = _mse(velocity_error)
     return position_weight * position_loss + velocity_weight * velocity_loss
 
 
@@ -103,6 +111,8 @@ def loss_components(
     simulation_trajectory,
     model,
     real_data: TrajectoryData,
+    position_scale=None,
+    velocity_scale=None,
 ):
     """返回角度损失、速度损失和总损失，方便调试和观察。"""
     if real_data.active_joint_ids is None:
@@ -122,14 +132,20 @@ def loss_components(
         for joint_id in real_data.active_joint_ids
     ]
 
-    position_loss = _mse(
+    position_error = (
         pos_sim[:, qpos_addresses]
         - jnp.asarray(real_data.pos_real, dtype=jnp.float32)
     )
-    velocity_loss = _mse(
+    velocity_error = (
         vel_sim[:, qvel_addresses]
         - jnp.asarray(real_data.vel_real, dtype=jnp.float32)
     )
+    if position_scale is not None:
+        position_error = position_error / jnp.asarray(position_scale)
+    if velocity_scale is not None:
+        velocity_error = velocity_error / jnp.asarray(velocity_scale)
+    position_loss = _mse(position_error)
+    velocity_loss = _mse(velocity_error)
 
     return {
         "角度损失": position_loss,

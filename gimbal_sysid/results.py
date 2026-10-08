@@ -17,6 +17,8 @@ def load_result(result_path: str | Path) -> dict[str, np.ndarray]:
         raise FileNotFoundError(f"找不到辨识结果文件: {result_path}")
 
     with np.load(result_path, allow_pickle=False) as data:
+        if "simulation_trajectory" not in data.files:
+            raise ValueError("此文件是参数检查点，不含评估轨迹；绘图请使用 identification_result.npz。")
         return {name: data[name] for name in data.files}
 
 
@@ -63,14 +65,25 @@ def print_parameters(result: dict[str, np.ndarray]) -> None:
     mode = str(result["mode"].item()) if "mode" in result else "unknown"
     labels = {"friction": "仅摩擦", "inertia": "仅惯量", "all": "摩擦和惯量"}
     print(f"辨识模式：{labels.get(mode, '未记录')}")
-    if "parameter_selection" in result and str(result["parameter_selection"].item()) == "best_loss":
+    if str(result.get("parameter_selection", "")) == "best_validation_loss":
+        print(f"最佳参数：第 {int(result['best_epoch'])} 次更新，固定验证损失 = {float(result['best_loss']):.6e}（不代表已收敛）")
+    elif "parameter_selection" in result and str(result["parameter_selection"].item()) == "best_loss":
         print(f"最佳参数：第 {int(result['best_epoch'])} 次更新，总损失 = {float(result['best_loss']):.6e}（不代表已收敛）")
     else:
         print("最终参数（保存的最后一次更新值，不代表已收敛）：")
     for local_id, joint_id in enumerate(result["active_joint_ids"]):
         print(f"  {_joint_label(result, local_id)}：")
+        inertia_is_effective = (
+            "inertia_parameterization" in result
+            and str(result["inertia_parameterization"].item())
+            == "fixed_locked_pose_joint_effective_inertia"
+        )
+        inertia_label = (
+            "固定锁定姿态下关节等效惯量"
+            if inertia_is_effective else "刚体第三主惯量"
+        )
         for key, label, unit, index, fitted in (
-            ("estimated_inertia", "刚体第三主惯量", "kg·m²", local_id, mode in {"inertia", "all"}),
+            ("estimated_inertia", inertia_label, "kg·m²", local_id, mode in {"inertia", "all"}),
             ("estimated_viscous", "粘性摩擦 B", "N·m·s/rad", int(joint_id), mode in {"friction", "all"}),
             ("estimated_coulomb", "库伦摩擦 Fc", "N·m", int(joint_id), mode in {"friction", "all"}),
         ):
@@ -79,7 +92,10 @@ def print_parameters(result: dict[str, np.ndarray]) -> None:
                 continue
             status = ("参与辨识" if fitted else "固定值") if mode in labels else "辨识状态未知"
             print(f"    {label} = {float(result[key][index]):.8g} {unit}（{status}）")
-    print("惯量字段对应当前代码的 body_inertia[:, 2]，并非整个关节的等效惯量。")
+    if "inertia_parameterization" in result and str(result["inertia_parameterization"].item()) == "fixed_locked_pose_joint_effective_inertia":
+        print("惯量字段对应锁定姿态下 M[dof, dof] 的关节等效惯量，已包含子 body 的惯性影响。")
+    else:
+        print("惯量字段对应当前代码的 body_inertia[:, 2]，并非整个关节的等效惯量。")
 
 
 def _plot_comparison(
@@ -157,6 +173,49 @@ def _plot_residuals(
     plt.close(figure)
 
 
+def report_segments(values, result, output_dir):
+    """前中后三段详细曲线及训练/验证误差，不把拼接窗口称作自由仿真。"""
+    n = len(values["pos_real"])
+    dt = float(result.get("dt", 1.0))
+    time_axis = np.asarray(result.get("evaluation_sample_indices", np.arange(n))) * dt
+    starts = result.get("evaluation_window_starts")
+    lengths = result.get("evaluation_window_lengths")
+    if starts is not None and lengths is not None:
+        for label, key in (("训练窗口", "training_window_ids"), ("固定验证窗口", "validation_window_ids")):
+            mask = np.zeros(n, dtype=bool)
+            for i in result.get(key, []):
+                mask[int(starts[i]):int(starts[i] + lengths[i])] = True
+            if mask.any():
+                print(f"{label}：角度 RMSE = {np.sqrt(np.mean(values['pos_residual'][mask] ** 2)):.6e}，"
+                      f"速度 RMSE = {np.sqrt(np.mean(values['vel_residual'][mask] ** 2)):.6e}")
+    chunks = [c for c in np.array_split(np.arange(n), 3) if len(c)]
+    for i, ids in enumerate(chunks):
+        print(f"时间段 {i + 1} [{time_axis[ids[0]]:.3f}, {time_axis[ids[-1]]:.3f}]："
+              f"角度 RMSE = {np.sqrt(np.mean(values['pos_residual'][ids] ** 2)):.6e}，"
+              f"速度 RMSE = {np.sqrt(np.mean(values['vel_residual'][ids] ** 2)):.6e}")
+    for joint in range(values["pos_real"].shape[1]):
+        fig, axes = plt.subplots(len(chunks), 2, figsize=(12, 3 * len(chunks)), squeeze=False)
+        for row, ids in enumerate(chunks):
+            # 每段中部显示两秒，避免长轨迹挤成一团。
+            width = min(len(ids), max(2, int(2.0 / dt)))
+            offset = (len(ids) - width) // 2
+            zoom = ids[offset:offset + width]
+            for col, (signal, unit) in enumerate((("pos", "rad"), ("vel", "rad/s"))):
+                ax = axes[row, col]
+                simulated = values[f"{signal}_sim"][zoom, joint].copy()
+                if starts is not None:
+                    simulated[np.isin(zoom, starts)] = np.nan
+                ax.plot(time_axis[zoom], values[f"{signal}_real"][zoom, joint], label="real")
+                ax.plot(time_axis[zoom], simulated, label="window simulation", alpha=0.8)
+                ax.set(title=f"Segment {row + 1}: {signal}", xlabel="time (s)", ylabel=unit)
+                ax.grid(True)
+                ax.legend()
+        fig.suptitle(f"{_joint_label(result, joint)} - reset at each window")
+        fig.tight_layout()
+        fig.savefig(output_dir / f"segment_comparison_{joint}.png", dpi=config.FIGURE_DPI)
+        plt.close(fig)
+
+
 def generate_report(result_path: str | Path, output_dir: str | Path | None = None) -> None:
     """生成对比图、残差图和终端统计信息。"""
     result_path = Path(result_path).expanduser().resolve()
@@ -164,6 +223,15 @@ def generate_report(result_path: str | Path, output_dir: str | Path | None = Non
     print_parameters(result)
     if "evaluation_mode" in result:
         print(f"评估方式：{str(result['evaluation_mode'].item())}")
+    if "stop_reason" in result:
+        reason = str(result["stop_reason"])
+        print(f"训练停止原因：{reason}")
+        if reason != "update_limit" and "failure_update" in result:
+            print(
+                f"异常位置：更新 {int(result['failure_update'])}，"
+                f"窗口 {int(result['failure_window_id'])}；"
+                f"{str(result.get('failure_details', ''))}"
+            )
     values = calculate_result(result)
 
     if output_dir is None:
@@ -193,6 +261,8 @@ def generate_report(result_path: str | Path, output_dir: str | Path | None = Non
 
     print(f"角度残差均方根 = {np.sqrt(np.mean(values['pos_residual'] ** 2)):.6e}")
     print(f"速度残差均方根 = {np.sqrt(np.mean(values['vel_residual'] ** 2)):.6e}")
+    print(f"评估覆盖 {len(values['pos_real'])}/{len(result['pos_real'])} 个采样点；每窗从实测初态重置。")
+    report_segments(values, result, output_dir)
     print(f"图片已保存到: {output_dir}")
 
 

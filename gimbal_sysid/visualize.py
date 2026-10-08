@@ -19,6 +19,8 @@ def load_saved_trajectory(result_path: str | Path):
         raise FileNotFoundError(f"找不到辨识结果文件: {result_path}")
 
     with np.load(result_path, allow_pickle=False) as result:
+        if "simulation_trajectory" not in result.files:
+            raise ValueError("此文件是参数检查点，不含回放轨迹；请使用 identification_result.npz。")
         trajectory = result["simulation_trajectory"]
         if "model_path" in result.files:
             saved_model_path = result["model_path"]
